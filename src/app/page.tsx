@@ -1,65 +1,170 @@
-import Image from "next/image";
+'use client'
+
+import { useState, useEffect } from 'react'
+import { IngredientSelector } from '@/components/ingredient-selector'
+import { RecipeList } from '@/components/recipe-list'
+import { Header } from '@/components/header'
+import { Button } from '@/components/ui/button'
+import { Loader2, Sparkles, Search } from 'lucide-react'
+import { RecipeSearchResult, Ingredient } from '@/lib/types'
+import { toast } from 'sonner'
 
 export default function Home() {
+  const [ingredients, setIngredients] = useState<Ingredient[]>([])
+  const [selectedIngredients, setSelectedIngredients] = useState<string[]>([])
+  const [recipes, setRecipes] = useState<RecipeSearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
+
+  // Fetch available ingredients on mount
+  useEffect(() => {
+    fetch('/api/ingredients')
+      .then(res => res.json())
+      .then(data => setIngredients(data))
+      .catch(err => {
+        console.error(err)
+        toast.error('Failed to load ingredients')
+      })
+  }, [])
+
+  const handleSearch = async () => {
+    if (selectedIngredients.length === 0) return
+
+    setIsSearching(true)
+    setHasSearched(true)
+
+    try {
+      const res = await fetch('/api/recipes/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ingredients: selectedIngredients })
+      })
+      const data = await res.json()
+      setRecipes(data)
+    } catch (error) {
+      console.error('Search failed:', error)
+      toast.error('Failed to search recipes')
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  const handleGenerate = async () => {
+    if (selectedIngredients.length === 0) return
+
+    setIsGenerating(true)
+
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ingredients: selectedIngredients })
+      })
+      const data = await res.json()
+
+      if (data.error) {
+        toast.error(data.error)
+        return
+      }
+
+      if (data.recipe) {
+        // Add generated recipe to results
+        setRecipes(prev => [{
+          ...data.recipe,
+          match_count: selectedIngredients.length,
+          total_ingredients: selectedIngredients.length,
+          match_percentage: 100,
+          missing_ingredients: []
+        }, ...prev])
+        toast.success('New recipe generated!')
+      }
+    } catch (error) {
+      console.error('Generation failed:', error)
+      toast.error('Failed to generate recipe')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
+      <Header />
+
+      <main className="container mx-auto px-4 py-8 max-w-6xl">
+        {/* Hero Section */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">
+            What&apos;s in your kitchen?
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            Select the ingredients you have on hand, and we&apos;ll show you delicious recipes you can make right now.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Ingredient Selector */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
+          <IngredientSelector
+            ingredients={ingredients}
+            selected={selectedIngredients}
+            onChange={setSelectedIngredients}
+          />
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t">
+            <Button
+              onClick={handleSearch}
+              disabled={selectedIngredients.length === 0 || isSearching}
+              size="lg"
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              {isSearching ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <Search className="mr-2 h-5 w-5" />
+              )}
+              Find Recipes ({selectedIngredients.length} ingredients)
+            </Button>
+
+            <Button
+              onClick={handleGenerate}
+              disabled={selectedIngredients.length < 3 || isGenerating}
+              size="lg"
+              variant="outline"
+              className="border-purple-300 text-purple-700 hover:bg-purple-50"
+            >
+              {isGenerating ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <Sparkles className="mr-2 h-5 w-5" />
+              )}
+              Generate New Recipe with AI
+            </Button>
+
+            {selectedIngredients.length > 0 && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSelectedIngredients([])
+                  setRecipes([])
+                  setHasSearched(false)
+                }}
+              >
+                Clear All
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Results Section */}
+        {hasSearched && (
+          <RecipeList
+            recipes={recipes}
+            isLoading={isSearching}
+            selectedIngredients={selectedIngredients}
+          />
+        )}
       </main>
     </div>
-  );
+  )
 }
