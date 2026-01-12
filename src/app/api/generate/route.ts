@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createAdminClient } from '@/lib/supabase'
-
-// Anthropic SDK - will be used when API key is configured
-// import Anthropic from '@anthropic-ai/sdk'
 
 export async function POST(request: NextRequest) {
   const { ingredients } = await request.json()
@@ -14,21 +12,17 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Check if Anthropic API key is configured
-  if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'your_anthropic_api_key') {
+  // Check if Google AI API key is configured
+  if (!process.env.GOOGLE_AI_API_KEY) {
     return NextResponse.json(
-      { error: 'AI recipe generation is not configured yet. Please add your Anthropic API key.' },
+      { error: 'AI recipe generation is not configured yet.' },
       { status: 503 }
     )
   }
 
   try {
-    // Dynamic import of Anthropic SDK
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY
-    })
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
     const prompt = `You are a professional chef. Create a delicious recipe using these ingredients: ${ingredients.join(', ')}.
 
@@ -55,20 +49,25 @@ Return ONLY valid JSON in this exact format, no other text:
   ]
 }`
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }]
-    })
+    const result = await model.generateContent(prompt)
+    const response = result.response
+    const text = response.text()
 
-    // Extract text content
-    const textContent = message.content.find(c => c.type === 'text')
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text response from AI')
+    // Extract JSON from response (handle potential markdown code blocks)
+    let jsonText = text
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/)
+    if (jsonMatch) {
+      jsonText = jsonMatch[1]
+    } else {
+      // Try to find raw JSON
+      const rawJsonMatch = text.match(/\{[\s\S]*\}/)
+      if (rawJsonMatch) {
+        jsonText = rawJsonMatch[0]
+      }
     }
 
     // Parse JSON from response
-    const recipeData = JSON.parse(textContent.text)
+    const recipeData = JSON.parse(jsonText)
 
     const supabase = createAdminClient()
 
